@@ -1,0 +1,638 @@
+<!-- dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - EduQuest</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <a href="#students-list" class="skip-link">Skip to content</a>
+    <div class="container">
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <div class="app-title">
+                        <span class="app-logo">🧠</span>
+                        <div>
+                            <h1>EduQuest Teacher Dashboard</h1>
+                            <p class="header-subtitle">Track student progress and manage classroom analytics</p>
+                        </div>
+                    </div>
+                </div>
+                <a id="back-to-app" href="index.html" class="primary-btn" aria-label="Back to App">
+                    <span>← Back to App</span>
+                </a>
+            </div>
+        </header>
+
+        <div class="dashboard-container">
+            <div class="upload-section">
+                <h2>📁 Upload Student Data</h2>
+                <p>Upload JSON files exported from student devices to view analytics</p>
+                <input type="file" id="student-data-upload" multiple accept=".json">
+                <div id="uploaded-files" class="uploaded-files"></div>
+            </div>
+
+            <div class="analytics-section">
+                <h2>📊 Class Analytics</h2>
+                <div class="charts-container">
+                    <div class="chart-card">
+                        <h3>Average Scores</h3>
+                        <canvas id="scores-chart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Lesson Completion</h3>
+                        <canvas id="completion-chart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Badge Distribution</h3>
+                        <canvas id="badges-chart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Login Tracker</h3>
+                        <p id="login-tracker" style="text-align:center; font-weight:700; font-size:1.2rem;">Logged-in students: 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="students-section">
+                <h2>👥 Student Progress</h2>
+                <div style="margin: 0 0 12px 0; display:flex; gap:10px; align-items:center;">
+                    <label>Filter by subject:</label>
+                    <select id="subject-filter">
+                        <option value="all">All</option>
+                        <option value="math">Math</option>
+                        <option value="science">Science</option>
+                        <option value="english">English</option>
+                    </select>
+                </div>
+                <div id="students-list" class="students-list">
+                    <!-- Student cards will be populated here -->
+                </div>
+            </div>
+
+            <div class="students-section">
+                <h2>📢 Announcements</h2>
+                <form id="announcement-form" class="material-card" style="display:block; padding:1rem;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <input id="ann-title" type="text" placeholder="Title" />
+                        <select id="ann-audience">
+                            <option value="all">All Students</option>
+                            <option value="student">Specific Student</option>
+                        </select>
+                        <input id="ann-target" type="text" placeholder="Student name (optional)" />
+                        <input id="ann-message" type="text" placeholder="Message" />
+                    </div>
+                    <div style="margin-top:10px; text-align:right;">
+                        <button class="primary-btn" type="submit">Post Announcement</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Ensure Back to App always navigates reliably
+            const backToApp = document.getElementById('back-to-app');
+            if (backToApp) {
+                backToApp.addEventListener('click', function(e){
+                    e.preventDefault();
+                    try { localStorage.setItem('eduquest_intent', 'student'); } catch(_) {}
+                    window.location.assign('index.html');
+                });
+            }
+            // Auth guard for teacher dashboard; allow faculty only
+            try {
+                const userData = localStorage.getItem('eduquest_user');
+                if (!userData) {
+                    console.log('No user data found, redirecting to index');
+                    window.location.href = 'index.html';
+                    return;
+                }
+                const u = JSON.parse(userData);
+                if (!u || u.role !== 'faculty') {
+                    console.log('User is not faculty, redirecting to index. Role:', u?.role);
+                    window.location.href = 'index.html';
+                    return;
+                }
+                console.log('Faculty user authenticated:', u.username);
+            } catch(e) { 
+                console.error('Auth error:', e);
+                window.location.href = 'index.html'; 
+                return; 
+            }
+            const uploadedData = [];
+            const studentsList = document.getElementById('students-list');
+            const uploadedFilesContainer = document.getElementById('uploaded-files');
+            
+            if (!studentsList) {
+                console.error('Students list element not found');
+                return;
+            }
+            if (!uploadedFilesContainer) {
+                console.error('Uploaded files container not found');
+                return;
+            }
+            
+            // Set up file upload
+            const fileUpload = document.getElementById('student-data-upload');
+            if (!fileUpload) {
+                console.error('File upload element not found');
+                return;
+            }
+            fileUpload.addEventListener('change', function(e) {
+                const files = e.target.files;
+                if (!files.length) return;
+                
+                Array.from(files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const studentData = JSON.parse(e.target.result);
+                            studentData.filename = file.name;
+                            uploadedData.push(studentData);
+                            
+                            // Display uploaded file
+                            const fileEl = document.createElement('div');
+                            fileEl.className = 'uploaded-file';
+                            fileEl.textContent = `${file.name} (${studentData.points || 0} points)`;
+                            uploadedFilesContainer.appendChild(fileEl);
+                            
+                            // Update analytics
+                            updateAnalytics();
+                        } catch (error) {
+                            console.error('Error parsing JSON file:', error);
+                            alert(`Error parsing ${file.name}: Invalid JSON format`);
+                        }
+                    };
+                    reader.readAsText(file);
+                });
+                
+                // Reset file input
+                e.target.value = '';
+            });
+            
+            // Update analytics with uploaded data
+            function updateAnalytics() {
+                updateScoresChart();
+                updateCompletionChart();
+                updateBadgesChart();
+                updateStudentsList();
+                updateLoginTracker();
+            }
+            
+            // Create scores chart
+            function updateScoresChart() {
+                const canvas = document.getElementById('scores-chart');
+                if (!canvas) {
+                    console.error('Scores chart canvas not found');
+                    return;
+                }
+                const ctx = canvas.getContext('2d');
+                
+                const studentNames = uploadedData.map(data => 
+                    data.filename.replace('.json', '').substring(0, 15)
+                );
+                const studentScores = uploadedData.map(data => data.points || 0);
+                
+                if (window.scoresChart) {
+                    window.scoresChart.destroy();
+                }
+                
+                if (typeof Chart === 'undefined') {
+                    console.error('Chart.js library not loaded');
+                    return;
+                }
+                window.scoresChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: studentNames,
+                        datasets: [{
+                            label: 'Points Earned',
+                            data: studentScores,
+                            backgroundColor: '#4a6fa5',
+                            borderColor: '#3a5a8a',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Create completion chart
+            function updateCompletionChart() {
+                const canvas = document.getElementById('completion-chart');
+                if (!canvas) {
+                    console.error('Completion chart canvas not found');
+                    return;
+                }
+                const ctx = canvas.getContext('2d');
+                
+                const completed = uploadedData.filter(data => data.completedLessons > 0).length;
+                const notCompleted = uploadedData.length - completed;
+                
+                if (window.completionChart) {
+                    window.completionChart.destroy();
+                }
+                
+                if (typeof Chart === 'undefined') {
+                    console.error('Chart.js library not loaded');
+                    return;
+                }
+                window.completionChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Completed Lessons', 'No Lessons Completed'],
+                        datasets: [{
+                            data: [completed, notCompleted],
+                            backgroundColor: ['#06d6a0', '#ff6b6b'],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Create badges chart
+            function updateBadgesChart() {
+                const canvas = document.getElementById('badges-chart');
+                if (!canvas) {
+                    console.error('Badges chart canvas not found');
+                    return;
+                }
+                const ctx = canvas.getContext('2d');
+                
+                // Count badges across all students
+                const badgeCounts = {};
+                uploadedData.forEach(data => {
+                    if (data.badges && Array.isArray(data.badges)) {
+                        data.badges.forEach(badge => {
+                            badgeCounts[badge.name] = (badgeCounts[badge.name] || 0) + 1;
+                        });
+                    }
+                });
+                
+                const badgeNames = Object.keys(badgeCounts);
+                const badgeValues = Object.values(badgeCounts);
+                
+                if (window.badgesChart) {
+                    window.badgesChart.destroy();
+                }
+                
+                if (typeof Chart === 'undefined') {
+                    console.error('Chart.js library not loaded');
+                    return;
+                }
+                window.badgesChart = new Chart(ctx, {
+                    type: 'polarArea',
+                    data: {
+                        labels: badgeNames,
+                        datasets: [{
+                            data: badgeValues,
+                            backgroundColor: [
+                                '#4a6fa5', '#ff6b6b', '#ffd166', '#06d6a0', 
+                                '#ef476f', '#7bc6e5', '#9e6a8f', '#5cb25d'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update students list
+            function updateStudentsList() {
+                studentsList.innerHTML = '';
+                
+                // Simple subject filter using stored subject scores
+                const subj = document.getElementById('subject-filter').value;
+                const scoreStore = JSON.parse(localStorage.getItem('eduquest_scores') || '{}');
+
+                uploadedData.forEach(data => {
+                    const studentCard = document.createElement('div');
+                    studentCard.className = 'student-card';
+                    
+                    studentCard.innerHTML = `
+                        <h3>${data.filename.replace('.json', '')}</h3>
+                        <div class="student-stats">
+                            <div class="stat">
+                                <span class="stat-value">${data.points || 0}</span>
+                                <span class="stat-label">Points</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value">${data.completedLessons || 0}</span>
+                                <span class="stat-label">Lessons</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value">${data.badges ? data.badges.length : 0}</span>
+                                <span class="stat-label">Badges</span>
+                            </div>
+                        </div>
+                        ${data.badges && data.badges.length > 0 ? `
+                        <div class="student-badges">
+                            <h4>Badges Earned:</h4>
+                            <div class="badges-list">
+                                ${data.badges.map(badge => `
+                                    <div class="badge-small">
+                                        <span class="badge-icon">${badge.icon || '🏆'}</span>
+                                        <span class="badge-name">${badge.name}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                    `;
+                    
+                    // If filter applied, show only when student seems lower in that subject (demo logic)
+                    if (subj === 'all' || (subj === 'math' && (scoreStore.math||0) < 60) || (subj === 'science' && (scoreStore.science||0) < 60) || (subj === 'english' && (scoreStore.english||0) < 60)) {
+                        studentsList.appendChild(studentCard);
+                    }
+                });
+            }
+
+            // Login tracker: count users with role student in local users store
+            function updateLoginTracker() {
+                const users = JSON.parse(localStorage.getItem('eduquest_users') || '[]');
+                const count = users.filter(u => u.role === 'student').length;
+                const el = document.getElementById('login-tracker');
+                if (el) el.textContent = `Logged-in students: ${count}`;
+            }
+
+            const subjectFilter = document.getElementById('subject-filter');
+            if (subjectFilter) {
+                subjectFilter.addEventListener('change', updateStudentsList);
+            } else {
+                console.error('Subject filter element not found');
+            }
+
+            // CSV Import/Export (roster and per-topic scores) - basic schema validation
+            const csvBtnBar = document.createElement('div');
+            csvBtnBar.style.margin = '10px 0';
+            csvBtnBar.innerHTML = '<button id="csv-import" class="secondary-btn">Import CSV</button> <button id="csv-export" class="secondary-btn">Export CSV</button>';
+            document.querySelector('.students-section').insertAdjacentElement('afterbegin', csvBtnBar);
+            document.getElementById('csv-import').addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = '.csv';
+                input.onchange = e => {
+                    const file = e.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        try {
+                            const rows = evt.target.result.split(/\r?\n/).filter(Boolean).map(r => r.split(','));
+                            const header = rows.shift();
+                            const required = ['name','points','math','science','english'];
+                            if (!required.every((h, i) => (header[i]||'').trim().toLowerCase() === h)) throw new Error('Invalid header. Expected: name,points,math,science,english');
+                            rows.forEach(r => {
+                                const [name, points, math, science, english] = r;
+                                uploadedData.push({ filename: name+'.json', points: Number(points)||0, badges: [], completedLessons: 0 });
+                                const store = JSON.parse(localStorage.getItem('eduquest_scores')||'{}');
+                                store.math = Number(math)||0; store.science = Number(science)||0; store.english = Number(english)||0;
+                                localStorage.setItem('eduquest_scores', JSON.stringify(store));
+                            });
+                            updateAnalytics();
+                            alert('CSV imported successfully.');
+                        } catch(err) {
+                            alert('CSV import failed: ' + err.message);
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            });
+            document.getElementById('csv-export').addEventListener('click', () => {
+                const rows = [['name','points','math','science','english']];
+                const store = JSON.parse(localStorage.getItem('eduquest_scores')||'{}');
+                uploadedData.forEach(d => rows.push([d.filename.replace('.json',''), d.points||0, store.math||0, store.science||0, store.english||0]));
+                const csv = rows.map(r => r.join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'eduquest_roster_scores.csv';
+                a.click();
+            });
+
+            // Announcements composer
+            const annForm = document.getElementById('announcement-form');
+            annForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const title = document.getElementById('ann-title').value.trim();
+                const audience = document.getElementById('ann-audience').value;
+                const target = document.getElementById('ann-target').value.trim();
+                const message = document.getElementById('ann-message').value.trim();
+                if (!title || !message) return alert('Title and message are required');
+                const list = JSON.parse(localStorage.getItem('eduquest_announcements') || '[]');
+                list.push({ title, audience, target, message, ts: Date.now() });
+                localStorage.setItem('eduquest_announcements', JSON.stringify(list));
+                document.getElementById('ann-title').value='';
+                document.getElementById('ann-message').value='';
+                alert('Announcement posted!');
+            });
+        });
+    </script>
+
+    <style>
+        .dashboard-container {
+            padding: 2rem 0;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        .header-left h1 {
+            margin: 0;
+            color: var(--primary);
+            font-size: 2.5rem;
+            font-weight: 800;
+        }
+        
+        .header-subtitle {
+            margin: 0.5rem 0 0 0;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        
+        .upload-section {
+            background-color: var(--white);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--box-shadow);
+        }
+        
+        .uploaded-files {
+            margin-top: 1rem;
+        }
+        
+        .uploaded-file {
+            background-color: var(--light);
+            border-radius: var(--border-radius);
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .analytics-section {
+            margin-bottom: 2rem;
+        }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+        
+        .chart-card {
+            background-color: var(--white);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            border: 1px solid #f0f0f0;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .chart-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+        }
+        
+        .chart-card h3 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+            text-align: center;
+        }
+        
+        .students-section h2 {
+            margin-bottom: 1rem;
+        }
+        
+        .students-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+        
+        .student-card {
+            background-color: var(--white);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            border: 1px solid #f0f0f0;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .student-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .student-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #4a6fa5, #06d6a0);
+        }
+        
+        .student-card h3 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+        
+        .student-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .student-stats .stat {
+            text-align: center;
+        }
+        
+        .student-stats .stat-value {
+            display: block;
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--primary);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .student-stats .stat-label {
+            font-size: 0.8rem;
+            color: var(--gray);
+        }
+        
+        .student-badges h4 {
+            margin-bottom: 0.5rem;
+            color: var(--dark);
+        }
+        
+        .badges-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .badge-small {
+            display: flex;
+            align-items: center;
+            background: linear-gradient(135deg, #4a6fa5, #06d6a0);
+            color: white;
+            border-radius: 20px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(74, 111, 165, 0.3);
+        }
+        
+        .badge-small .badge-icon {
+            margin-right: 0.25rem;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .students-list {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</body>
+</html>
