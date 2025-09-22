@@ -424,7 +424,7 @@
     <div id="nav-drawer" class="drawer">
         <div class="drawer-content">
             <div class="drawer-header">
-                <img src="https://placeholder-image-service.onrender.com/image/60x60?prompt=student%20avatar&id=avatar-1" alt="Student avatar" class="user-avatar" loading="lazy" decoding="async">
+                <div class="user-avatar">👨‍🎓</div>
                 <div class="user-info">
                     <span id="drawer-username">Student</span>
                     <span class="user-level">Level 1 Explorer</span>
@@ -590,23 +590,27 @@
 
         // Initialize app
         function initApp() {
-            // Load user data from localStorage if available
+            // Always start with landing page first
+            landingScreen.classList.add('active');
+            dashboardScreen.classList.remove('active');
+            
+            // Load user data from localStorage if available (but don't auto-redirect)
             const savedData = localStorage.getItem('eduquest_user');
             if (savedData) {
                 userData = JSON.parse(savedData);
-                if (userData.role === 'faculty') {
+                console.log('Found saved user data:', userData.role);
+            }
+            
+            // Only redirect if explicitly requested via URL hash
+            if (location.hash === '#dashboard' && savedData) {
+                const user = JSON.parse(savedData);
+                if (user.role === 'faculty') {
                     window.location.href = 'dashboard.html';
                     return;
-                } else {
+                } else if (user.role === 'student') {
                     landingScreen.classList.remove('active');
                     dashboardScreen.classList.add('active');
                 }
-            }
-            // Auth guard: if user missing and not guest, stay on landing; if coming from deep link to dashboard block access
-            const requiresAuth = location.hash === '#dashboard' || false;
-            if (requiresAuth && (!userData || !userData.role)) {
-                landingScreen.classList.add('active');
-                dashboardScreen.classList.remove('active');
             }
             
             // Set up event listeners
@@ -633,6 +637,7 @@
                     window.location.href = 'login.html';
                     return;
                 }
+                // If student is already logged in, go to dashboard
                 landingScreen.classList.remove('active');
                 dashboardScreen.classList.add('active');
             });
@@ -653,6 +658,36 @@
                     if (mathTimerId) { clearInterval(mathTimerId); mathTimerId = null; }
                     gameScreen.classList.remove('active');
                     dashboardScreen.classList.add('active');
+                });
+            }
+
+            // Logout button
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    // Clear user data
+                    localStorage.removeItem('eduquest_user');
+                    localStorage.removeItem('eduquest_users');
+                    localStorage.removeItem('eduquest_intent');
+                    
+                    // Reset to landing page
+                    dashboardScreen.classList.remove('active');
+                    gameScreen.classList.remove('active');
+                    landingScreen.classList.add('active');
+                    
+                    // Reset user data
+                    userData = {
+                        username: 'Student',
+                        language: 'en',
+                        points: 0,
+                        badges: [],
+                        lessonsCompleted: 0,
+                        mathProgress: 0,
+                        scienceProgress: 0,
+                        memoryProgress: 0
+                    };
+                    
+                    console.log('User logged out successfully');
                 });
             }
 
