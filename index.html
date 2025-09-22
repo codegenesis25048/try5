@@ -590,27 +590,35 @@
 
         // Initialize app
         function initApp() {
-            // Always start with landing page first
-            landingScreen.classList.add('active');
-            dashboardScreen.classList.remove('active');
+            console.log('Initializing app...');
             
-            // Load user data from localStorage if available (but don't auto-redirect)
+            // Load user data from localStorage if available
             const savedData = localStorage.getItem('eduquest_user');
             if (savedData) {
                 userData = JSON.parse(savedData);
-                console.log('Found saved user data:', userData.role);
-            }
-            
-            // Only redirect if explicitly requested via URL hash
-            if (location.hash === '#dashboard' && savedData) {
-                const user = JSON.parse(savedData);
-                if (user.role === 'faculty') {
+                console.log('Found saved user data:', userData);
+                console.log('User role:', userData.role);
+                
+                // If user is logged in, show appropriate dashboard
+                if (userData.role === 'faculty') {
+                    console.log('Redirecting faculty to dashboard.html');
                     window.location.href = 'dashboard.html';
                     return;
-                } else if (user.role === 'student') {
+                } else if (userData.role === 'student') {
+                    console.log('Showing student dashboard');
+                    // Show student dashboard
                     landingScreen.classList.remove('active');
                     dashboardScreen.classList.add('active');
+                } else {
+                    console.log('Unknown user role, showing landing page');
+                    landingScreen.classList.add('active');
+                    dashboardScreen.classList.remove('active');
                 }
+            } else {
+                console.log('No user data found, showing landing page');
+                // No user data, show landing page
+                landingScreen.classList.add('active');
+                dashboardScreen.classList.remove('active');
             }
             
             // Set up event listeners
@@ -632,23 +640,43 @@
             // Landing actions
             if (enterStudentBtn) enterStudentBtn.addEventListener('click', () => {
                 const saved = localStorage.getItem('eduquest_user');
-                if (!saved || (saved && JSON.parse(saved).role !== 'student')) {
+                if (!saved) {
+                    // No user data, go to login
                     localStorage.setItem('eduquest_intent', 'student');
                     window.location.href = 'login.html';
                     return;
                 }
-                // If student is already logged in, go to dashboard
+                
+                const user = JSON.parse(saved);
+                if (user.role !== 'student') {
+                    // User is not a student, go to login
+                    localStorage.setItem('eduquest_intent', 'student');
+                    window.location.href = 'login.html';
+                    return;
+                }
+                
+                // Student is already logged in, go to student dashboard
                 landingScreen.classList.remove('active');
                 dashboardScreen.classList.add('active');
             });
             if (enterTeacherBtn) enterTeacherBtn.addEventListener('click', () => {
                 const saved = localStorage.getItem('eduquest_user');
-                if (!saved || (saved && JSON.parse(saved).role !== 'faculty')) {
+                if (!saved) {
+                    // No user data, go to login
                     localStorage.setItem('eduquest_intent', 'faculty');
                     window.location.href = 'login.html';
                     return;
                 }
-                // If teacher is already logged in, go directly to dashboard
+                
+                const user = JSON.parse(saved);
+                if (user.role !== 'faculty') {
+                    // User is not a faculty, go to login
+                    localStorage.setItem('eduquest_intent', 'faculty');
+                    window.location.href = 'login.html';
+                    return;
+                }
+                
+                // Teacher is already logged in, go to teacher dashboard
                 window.location.href = 'dashboard.html';
             });
 
