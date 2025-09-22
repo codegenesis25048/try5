@@ -168,6 +168,19 @@ body {
     display: block;
 }
 
+    /* User avatar */
+.user-avatar {
+    font-size: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 50%;
+    color: white;
+}
+
 @media (max-width: 640px) {
     .portals-row {
         flex-direction: column;
